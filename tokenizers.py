@@ -231,7 +231,7 @@ class gakushu_Tokenizer():
 
         if display:
             print("学習漢字トークナイザ: gakushu_Tokenizer():")
-            print(f"self.tokens:{"".join(c for c in self.tokens)}")
+            print(f'self.tokens:{"".join(c for c in self.tokens)}')
             print()
 
 
