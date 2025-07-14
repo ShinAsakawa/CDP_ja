@@ -277,7 +277,7 @@ class joyo_Tokenizer():
 
         if display:
             print("常用漢字トークナイザ: gakushu_Tokenizer():")
-            print(f"self.tokens:{"".join(c for c in self.tokens)}")
+            print(f'self.tokens:{"".join(c for c in self.tokens)}')
             print()
 
 
