@@ -28,7 +28,7 @@ class Psylex71_Dataset(torch.utils.data.Dataset):
         
         super().__init__()
 
-        psylex71_dic = pd.read_excel(os.path.join(os.path.dirname(__file__), 'psylex71.xlsx')).to_dict(orient='index')
+        psylex71_dic = pd.read_excel(os.path.join(os.path.dirname(__file__), 'Psylex71.xlsx')).to_dict(orient='index')
         if psylex71_dic is None:
             raise ValueError("psylex71_dic must be provided as a dictionary.")
         #print(f'psylex71_dic: {len(psylex71_dic)} entries loaded.')
