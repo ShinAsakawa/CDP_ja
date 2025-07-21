@@ -1,9 +1,176 @@
+import sys
+
 import torch
 # 全モデル共通使用するライブラリの輸入
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
+
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu')
+
+
+class direct_TLA(torch.nn.Module):
+    def __init__(self,
+                 inp_vocab_size:int=None, # len(psylex71_ds.input_tokenizer.tokens),
+                 out_vocab_size:int=None, # len(psylex71_ds.output_tokenizer.tokens),
+                 inp_len:int=None, # maxlen_inp,
+                 out_len:int=None, # psylex71_ds.maxlen_out,
+                 out_f:str='tanh',  # 出力層の活性化関数= ['tanh','sigmoid', 'relu', 'softmax', 'none']
+                 device:str=device):
+
+        super().__init__()
+        self.inp_vocab_size=inp_vocab_size
+        self.inp_len=inp_len
+        self.out_vocab_size=out_vocab_size
+        self.out_len=out_len
+        self.device=device
+
+        #self.proj_layer = torch.nn.Linear(in_features=n_hid * inp_len, out_features=out_vocab_size * out_len).to(device)
+        self.out_layer = torch.nn.Linear(in_features=inp_len * inp_vocab_size,
+                                         out_features=out_vocab_size * out_len).to(device)
+        
+        if out_f == 'tanh':
+            self.out_f = torch.nn.Tanh()
+        elif out_f == 'sigmoid':
+            self.out_f = torch.nn.Sigmoid()
+        elif out_f == 'relu':
+            self.out_f = torch.nn.ReLU()
+        elif out_f == 'softmax':
+            self.out_f = torch.nn.Softmax(dim=2)
+        elif out_f == 'none':
+            self.out_f = None
+        else:
+            raise ValueError(f'不正な出力層の活性化関数: {out_f}')
+
+    def forward(self, X, Y):
+        '''互換性のため Y を入力としているが実際には使っていない'''
+        X = torch.nn.functional.one_hot(X, num_classes=self.inp_vocab_size).to(self.device)
+        X = X.float()
+        X = X.reshape(X.size(0), -1)
+        X = self.out_layer(X)
+        X = X.reshape(X.size(0), self.out_len, self.out_vocab_size)
+        if self.out_f is not None:
+            X = self.out_f(X)
+        return X
+
+
+class indirect_TLA(torch.nn.Module):
+    def __init__(self,
+                 inp_vocab_size:int=None, # len(psylex71_ds.input_tokenizer.tokens),
+                 out_vocab_size:int=None, # len(psylex71_ds.output_tokenizer.tokens),
+                 inp_len:int=None, # maxlen_inp,
+                 out_len:int=None, # psylex71_ds.maxlen_out,
+                 out_f:str='tanh',  # 出力層の活性化関数= ['tanh','sigmoid', 'relu', 'softmax', 'none']
+                 device:str=device):
+
+        super().__init__()
+        self.inp_vocab_size=inp_vocab_size
+        self.inp_len=inp_len
+        self.out_vocab_size=out_vocab_size
+        self.out_len=out_len
+
+        self.emb_layer = torch.nn.Embedding(
+            num_embeddings=inp_vocab_size,
+            embedding_dim=out_vocab_size,
+            padding_idx=0).to(device)
+        self.emb_transform = torch.nn.Linear(
+            in_features=inp_len * out_vocab_size,
+            out_features=out_vocab_size * out_len).to(device)
+
+        if out_f == 'tanh':
+            self.out_f = torch.nn.Tanh()
+        elif out_f == 'sigmoid':
+            self.out_f = torch.nn.Sigmoid()
+        elif out_f == 'relu':
+            self.out_f = torch.nn.ReLU()
+        elif out_f == 'softmax':
+            self.out_f = torch.nn.Softmax(dim=2)
+        elif out_f == 'none':
+            self.out_f = None
+        else:
+            raise ValueError(f'不正な出力層の活性化関数: {out_f}')
+
+
+    def forward(self, X, Y):
+        '''互換性のため Y を入力としているが実際には使っていない'''
+
+        # 間接経路
+        emb = self.emb_layer(X)
+        emb = emb.reshape(emb.size(0), -1)
+        emb = self.emb_transform(emb)
+
+        out = emb
+        out = out.reshape(out.size(0), self.out_len, self.out_vocab_size)
+        if self.out_f is not None:
+            out = self.out_f(out)
+
+        return out
+
+
+class combined_TLA(torch.nn.Module):
+    def __init__(self,
+                 inp_vocab_size:int=None, # len(psylex71_ds.input_tokenizer.tokens),
+                 out_vocab_size:int=None, # len(psylex71_ds.output_tokenizer.tokens),
+                 inp_len:int=None, # maxlen_inp,
+                 out_len:int=None, # psylex71_ds.maxlen_out,
+                 out_f:str='tanh',  # 出力層の活性化関数= ['tanh','sigmoid', 'relu', 'softmax', 'none']
+                 device:str=device):
+
+        super().__init__()
+        self.inp_vocab_size=inp_vocab_size
+        self.inp_len=inp_len
+        self.out_vocab_size=out_vocab_size
+        self.out_len=out_len
+        self.device=device
+
+        self.emb_layer = torch.nn.Embedding(
+            num_embeddings=inp_vocab_size,
+            embedding_dim=out_vocab_size,
+            padding_idx=0).to(device)
+        self.emb_transform = torch.nn.Linear(
+            in_features=inp_len * out_vocab_size,
+            out_features=out_vocab_size * out_len).to(device)
+
+        self.out_layer = torch.nn.Linear(
+            in_features=inp_len * inp_vocab_size,
+            out_features=out_vocab_size * out_len).to(device)
+
+        if out_f == 'tanh':
+            self.out_f = torch.nn.Tanh()
+        elif out_f == 'sigmoid':
+            self.out_f = torch.nn.Sigmoid()
+        elif out_f == 'relu':
+            self.out_f = torch.nn.ReLU()
+        elif out_f == 'softmax':
+            self.out_f = torch.nn.Softmax(dim=2)
+        elif out_f == 'none':
+            self.out_f = None
+        else:
+            raise ValueError(f'不正な出力層の活性化関数: {out_f}')
+
+
+    def forward(self, X, Y):
+        '''互換性のため Y を入力としているが実際には使っていない'''
+
+        # 間接経路
+        emb = self.emb_layer(X)
+        emb = emb.reshape(emb.size(0), -1)
+        emb = self.emb_transform(emb).to(self.device)
+
+        # 直接経路
+        Direct = torch.nn.functional.one_hot(X, num_classes=self.inp_vocab_size).to(self.device)
+        Direct = Direct.float()
+        Direct = Direct.reshape(X.size(0), -1)
+
+        out = self.out_layer(Direct)
+        out = out + emb
+        out = out.reshape(out.size(0), self.out_len, self.out_vocab_size)
+        if self.out_f is not None:
+            out = self.out_f(out)
+
+        return out
+
 
 class vanilla_TLA(torch.nn.Module):
     def __init__(self,
@@ -13,7 +180,7 @@ class vanilla_TLA(torch.nn.Module):
                  out_len:int=None, # psylex71_ds.maxlen_out,
                  n_hid:int=1024,
                  device:str='cpu'):
-        
+
         super().__init__()
         self.inp_vocab_size=inp_vocab_size
         self.inp_len=inp_len
@@ -21,30 +188,26 @@ class vanilla_TLA(torch.nn.Module):
         self.out_len=out_len
         self.n_hid=n_hid
 
-        self.emb_layer = torch.nn.Linear(in_features=inp_vocab_size * inp_len, out_features=n_hid).to(device)
-        #self.sigmoid = torch.nn.Sigmoid()
-        #self.tanh = torch.nn.Tanh()
-        #self.relu = torch.nn.ReLU()
-        self.emb_outf = torch.nn.Tanh()
-        self.out_outf = torch.nn.Sigmoid()
-        #self.out_outf = torch.nn.Tanh()
-        
-        self.out_layer = torch.nn.Linear(in_features=n_hid, out_features=out_vocab_size * out_len).to(device)
+        self.emb_layer = nn.Embedding(num_embeddings=inp_vocab_size, embedding_dim=n_hid, padding_idx=0).to(device)
+        self.proj_layer = torch.nn.Linear(in_features=n_hid * inp_len, out_features=out_vocab_size * out_len).to(device)
+        #self.emb_outf = torch.nn.Tanh()
+        #self.out_outf = torch.nn.Sigmoid()
+        #self.out_layer = torch.nn.Linear(in_features=n_hid, out_features=out_vocab_size * out_len).to(device)
 
     def forward(self, X, Y):
         '''互換性のため Y を入力としているが実際には使っていない'''
 
         # 入力 X はトークン ID リストであるので，ワンホットベクトル化する
-        X = torch.nn.functional.one_hot(X, num_classes=self.inp_vocab_size)
+        #X = torch.nn.functional.one_hot(X, num_classes=self.inp_vocab_size)
+        #X = X.float()               # ワンホットベクトルは整数 int64 なので浮動小数点に変換
+
+        X = self.emb_layer(X)       # 埋め込み層への信号伝搬
 
         X = X.reshape(X.size(0),-1) # ワンホットベクトルを連接して行ベクトルに変換
-        X = X.float()               # ワンホットベクトルは整数 int64 なので浮動小数点に変換
-        
-        X = self.emb_layer(X)       # 埋め込み層への信号伝搬
-        X = self.emb_outf(X)        # 埋め込み層の非線形変換
-        
-        X = self.out_layer(X)       # 出力層への信号伝搬
-        X = self.out_outf(X)        # 出力層での非線形変換
+        #X = self.emb_outf(X)        # 埋め込み層の非線形変換
+
+        X = self.proj_layer(X)       # 出力層への信号伝搬
+        #X = self.out_outf(X)        # 出力層での非線形変換
 
         # 各出力ニューロンに分割
         X = X.reshape(X.size(0), self.out_len, self.out_vocab_size)
@@ -67,7 +230,7 @@ class Seq2Seq_wAtt(nn.Module):
                  n_layers:int=2,
                  bidirectional:bool=False,
                  device='cpu'):
-        
+
         super().__init__()
 
         # Encoder 側の入力トークン id を多次元ベクトルに変換
@@ -131,9 +294,10 @@ class Seq2Seq_wAtt(nn.Module):
 
         # torch.cat だから c_t と dec_out とで合成
         dec_out_ = torch.cat([c_t, dec_out], dim=2)
-        dec_out_ = self.combine_layer(dec_out_)
+        dec_out = self.combine_layer(dec_out_)
 
-        return self.out_layer(dec_out_)
+        return dec_out, enc_out
+        # return self.out_layer(dec_out_)
 
     def evaluate(self, enc_inp, dec_inp):
 
@@ -142,7 +306,8 @@ class Seq2Seq_wAtt(nn.Module):
 
         dec_emb = self.decoder_emb(dec_inp)
         dec_out, (hny, cny) = self.decoder(dec_emb,(hnx, cnx))
-        return self.out_layer(dec_out)
+        dec_out = self.out_layer(dec_out)
+        return dec_out, enc_out
 
         # enc_out は (バッチサイズ，ソースの単語数，中間層の次元数)
         # ソース側 (enc_out) の各単語とターゲット側 (dec_out) の各単語との類似度を測定するため
@@ -234,8 +399,9 @@ class Seq2Seq_woAtt(nn.Module):
 
         dec_emb = self.decoder_emb(dec_inp)
         dec_out, (hny, cny) = self.decoder(dec_emb,(hnx, cnx))
+        dec_out = self.out_layer(dec_out)
 
-        return self.out_layer(dec_out)
+        return dec_out, enc_out
 
     def evaluate(self, enc_inp, dec_inp):
         return self.forward(enc_inp, dec_inp)

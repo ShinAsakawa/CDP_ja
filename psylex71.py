@@ -23,7 +23,7 @@ class Psylex71_Dataset(torch.utils.data.Dataset):
                  output_tokenizer=None, # mora_tokenizer,     # 出力データのトークナイザ
                  special_tokens:list = ['PAD', 'UNK', 'SOW', 'EOW'],                                                                                                                       device:str=device,
                  display:bool=True,
-                 add_special_tokens:bool=False,
+                 add_special_tokens:bool=True,
                  isColab:bool=False):
         
         super().__init__()
