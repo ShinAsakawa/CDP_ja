@@ -8,8 +8,7 @@ def fit_an_epoch(model:torch.nn.Module=None,
                  loss_f:torch.nn.modules=None,
                  _dl:torch.utils.data.dataloader.DataLoader=None,
                  is_seq2seq:bool=True,
-                 device:str="cpu"
-                 ):
+                 device:str="cpu"):
     """改訂版 1 エポック分の学習を行う"""
 
     model.train()  # モデルを訓練モードに変更
@@ -55,7 +54,7 @@ def fit_an_epoch(model:torch.nn.Module=None,
 
         N += len(tchs)
     p_ = count / N
-    return {'sum_loss':sum_loss, 'count':count, 'N':N, 'P':p_}
+    return {'sum_loss':sum_loss, 'count':count, 'N':N, 'P':p_}, model, optimizer
 
 
 def eval_an_epoch(model:torch.nn.Module=None,
@@ -104,4 +103,4 @@ def eval_an_epoch(model:torch.nn.Module=None,
 
         N += len(tchs)
     p_ = count / N
-    return {'sum_loss':sum_loss, 'count':count, 'N':N, 'P':p_}
+    return {'sum_loss':sum_loss, 'count':count, 'N':N, 'P':p_}, model

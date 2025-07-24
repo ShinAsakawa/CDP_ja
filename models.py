@@ -296,6 +296,8 @@ class Seq2Seq_wAtt(nn.Module):
         dec_out_ = torch.cat([c_t, dec_out], dim=2)
         dec_out = self.combine_layer(dec_out_)
 
+        dec_out = self.out_layer(dec_out)  # これが抜けてた 2025_0724
+
         return dec_out, enc_out
         # return self.out_layer(dec_out_)
 
