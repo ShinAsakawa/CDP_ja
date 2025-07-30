@@ -13,34 +13,46 @@ from collections import OrderedDict
 class Psylex71_Dataset(torch.utils.data.Dataset):
     '''ニューラルネットワークモデルに Psylex71 を学習させるための PyTorch 用データセットのクラス'''
 
-    def __init__(self,
-                 inplen_min:int = 2,   # 最短文字列長
-                 inplen_max:int = 2,   # 最長文字列長
-                #  psylex71_dic:dict=None,  # Psylex71_dic を仮定
-                #  mora_tokenizer=None,  # mora トークナイザ
-                #  kunrei_tokenizer=None,  # 訓令式トークナイザ
-                 input_tokenizer=None, # gakushu_tokenizer,   # 入力データのトークナイザ
-                 output_tokenizer=None, # mora_tokenizer,     # 出力データのトークナイザ
-                 special_tokens:list = ['PAD', 'UNK', 'SOW', 'EOW'],                                                                                                                       device:str=device,
-                 display:bool=True,
-                 add_special_tokens:bool=True,
-                 isColab:bool=False):
+    def __init__(
+        self,
+        inp_minlen:int = 2,   # 最短文字列長
+        inp_maxlen:int = 2,   # 最長文字列長
+        input_tokenizer=None, # gakushu_tokenizer,   # 入力データのトークナイザ
+        output_tokenizer=None, # mora_tokenizer,     # 出力データのトークナイザ
+        special_tokens:list = ['PAD', 'UNK', 'SOW', 'EOW'],                                                                                                                       device:str=device,
+        display:bool=True,
+        add_special_tokens:bool=True,
+        excel_fname:str='Psylex71.xlsx',
+        is_padding:bool=True,
+        isColab:bool=False):
         
         super().__init__()
 
-        psylex71_dic = pd.read_excel(os.path.join(os.path.dirname(__file__), 'Psylex71.xlsx')).to_dict(orient='index')
+        self.excel_fname = excel_fname
+        psylex71_dic = pd.read_excel(os.path.join(os.path.dirname(__file__), excel_fname)).to_dict(orient='index')
         if psylex71_dic is None:
             raise ValueError("psylex71_dic must be provided as a dictionary.")
-        #print(f'psylex71_dic: {len(psylex71_dic)} entries loaded.')
+
+        self.inp_minlen = inp_minlen
+        self.inp_maxlen = inp_maxlen
         self.input_tokenizer = input_tokenizer
         self.output_tokenizer = output_tokenizer
+        self.is_padding = is_padding
 
         self.dic = {}
         for k,v in psylex71_dic.items():
             wrd = v['単語']
             wrd_len = len(wrd)
-            if (inplen_min <= wrd_len) and (wrd_len <= inplen_max):  # 単語長が条件範囲内であればデータとして採用
-                self.dic[k] = v
+
+            # 単語長が条件範囲内であればデータとして採用
+            if (inp_minlen <= wrd_len) and (wrd_len <= inp_maxlen):
+
+                is_valid_ch = True
+                for ch in wrd:
+                    if not ch in input_tokenizer.tokens:
+                        is_valid_ch = False
+                if is_valid_ch:
+                    self.dic[k] = v
                 
         self.inputs = [v['単語'] for v in self.dic.values()]
         self.targets = [v['ヨミ'] for v in self.dic.values()]
@@ -48,16 +60,17 @@ class Psylex71_Dataset(torch.utils.data.Dataset):
         self.device = device
         self.add_special_tokens = add_special_tokens
         
-        maxlen_out = 0
+        out_maxlen = 0
         for k, v in self.dic.items():
             _len = len(self.output_tokenizer(v['ヨミ']))
-            maxlen_out = _len if _len > maxlen_out else maxlen_out
+            out_maxlen = _len if _len > out_maxlen else out_maxlen
 
         # ＋2 しているのは <SOW>,<EOW> という 2 つのスペシャルトークンを付加するため            
-        self.maxlen_out = maxlen_out + 2
+        self.out_maxlen = out_maxlen + 2
+        self.inp_maxlen = inp_maxlen + 2
 
         if display:
-            print(f'Psylex71_Dataset(): inplen_min:{inplen_min}, inplen_max:{inplen_max}, len(self.dic):{len(self.dic)}, maxlen_out:{self.maxlen_out}')
+            print(f'Psylex71_Dataset(): inp_minlen:{inp_minlen}, inp_maxlen:{inp_maxlen}, len(self.dic):{len(self.dic)}, out_maxlen:{self.out_maxlen}')
             # print(f'input_tokenizer.tokens: {input_tokenizer.tokens}')
             # print(f'output_tokenizer.tokens: {self.output_tokenizer.tokens}')
             print(f'special_tokens: {self.special_tokens}')
@@ -85,9 +98,13 @@ class Psylex71_Dataset(torch.utils.data.Dataset):
         #tgt = [self.target_tokecands.index('<SOW>')] + [self.target_cands.index(x) for x in tgt] + [self.target_cands.index('<EOW>')]
         #tgt = self.output_tokenizer(tgt)
 
-        while len(tgt) < self.maxlen_out:
-            tgt = tgt + [self.output_tokenizer.tokens.index('<PAD>')]
-            #tgt = tgt + [self.target_cands.index('<PAD>')]
+        if self.is_padding:
+            while len(inp) < self.inp_maxlen:
+                inp = inp + [self.input_tokenizer.tokens.index('<PAD>')]
+
+            while len(tgt) < self.out_maxlen:
+                tgt = tgt + [self.output_tokenizer.tokens.index('<PAD>')]
+                #tgt = tgt + [self.target_cands.index('<PAD>')]
 
         inp, tgt = torch.LongTensor(inp), torch.LongTensor(tgt)
         inp, tgt = inp.to(self.device), tgt.to(self.device)

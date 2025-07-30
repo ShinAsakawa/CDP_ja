@@ -10,4 +10,4 @@ from .tokenizers import *
 from .models import direct_TLA, indirect_TLA, combined_TLA, Seq2Seq_wAtt, Seq2Seq_woAtt
 from .psylex71 import Psylex71_Dataset
 from .transformer import Transformer
-from .utils import fit_an_epoch, eval_an_epoch  
+from .utils import fit_an_epoch, eval_an_epoch, init_seed

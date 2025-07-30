@@ -11,13 +11,10 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'mps' if torch.
 
 
 class direct_TLA(torch.nn.Module):
-    def __init__(self,
-                 inp_vocab_size:int=None, # len(psylex71_ds.input_tokenizer.tokens),
-                 out_vocab_size:int=None, # len(psylex71_ds.output_tokenizer.tokens),
-                 inp_len:int=None, # maxlen_inp,
-                 out_len:int=None, # psylex71_ds.maxlen_out,
-                 out_f:str='tanh',  # 出力層の活性化関数= ['tanh','sigmoid', 'relu', 'softmax', 'none']
-                 device:str=device):
+    def __init__(
+            self, inp_vocab_size:int=None, out_vocab_size:int=None, inp_len:int=None, out_len:int=None,
+            out_f:str='tanh',  # 出力層の活性化関数= ['tanh','sigmoid', 'relu', 'softmax', 'none']
+            device:str=device):
 
         super().__init__()
         self.inp_vocab_size=inp_vocab_size
@@ -26,81 +23,30 @@ class direct_TLA(torch.nn.Module):
         self.out_len=out_len
         self.device=device
 
-        #self.proj_layer = torch.nn.Linear(in_features=n_hid * inp_len, out_features=out_vocab_size * out_len).to(device)
-        self.out_layer = torch.nn.Linear(in_features=inp_len * inp_vocab_size,
-                                         out_features=out_vocab_size * out_len).to(device)
-        
-        if out_f == 'tanh':
-            self.out_f = torch.nn.Tanh()
-        elif out_f == 'sigmoid':
-            self.out_f = torch.nn.Sigmoid()
-        elif out_f == 'relu':
-            self.out_f = torch.nn.ReLU()
-        elif out_f == 'softmax':
-            self.out_f = torch.nn.Softmax(dim=2)
-        elif out_f == 'none':
-            self.out_f = None
-        else:
-            raise ValueError(f'不正な出力層の活性化関数: {out_f}')
-
-    def forward(self, X, Y):
-        '''互換性のため Y を入力としているが実際には使っていない'''
-        X = torch.nn.functional.one_hot(X, num_classes=self.inp_vocab_size).to(self.device)
-        X = X.float()
-        X = X.reshape(X.size(0), -1)
-        X = self.out_layer(X)
-        X = X.reshape(X.size(0), self.out_len, self.out_vocab_size)
-        if self.out_f is not None:
-            X = self.out_f(X)
-        return X
-
-
-class indirect_TLA(torch.nn.Module):
-    def __init__(self,
-                 inp_vocab_size:int=None, # len(psylex71_ds.input_tokenizer.tokens),
-                 out_vocab_size:int=None, # len(psylex71_ds.output_tokenizer.tokens),
-                 inp_len:int=None, # maxlen_inp,
-                 out_len:int=None, # psylex71_ds.maxlen_out,
-                 out_f:str='tanh',  # 出力層の活性化関数= ['tanh','sigmoid', 'relu', 'softmax', 'none']
-                 device:str=device):
-
-        super().__init__()
-        self.inp_vocab_size=inp_vocab_size
-        self.inp_len=inp_len
-        self.out_vocab_size=out_vocab_size
-        self.out_len=out_len
-
-        self.emb_layer = torch.nn.Embedding(
-            num_embeddings=inp_vocab_size,
-            embedding_dim=out_vocab_size,
-            padding_idx=0).to(device)
-        self.emb_transform = torch.nn.Linear(
-            in_features=inp_len * out_vocab_size,
-            out_features=out_vocab_size * out_len).to(device)
+        self.out_layer = torch.nn.Linear(in_features=inp_len * inp_vocab_size, out_features=out_vocab_size * out_len).to(device)
 
         if out_f == 'tanh':
             self.out_f = torch.nn.Tanh()
         elif out_f == 'sigmoid':
             self.out_f = torch.nn.Sigmoid()
-        elif out_f == 'relu':
-            self.out_f = torch.nn.ReLU()
         elif out_f == 'softmax':
             self.out_f = torch.nn.Softmax(dim=2)
-        elif out_f == 'none':
+        elif out_f == None:
             self.out_f = None
+        elif out_f == 'ReLU':
+            self.out_f = torch.nn.ReLU()
         else:
             raise ValueError(f'不正な出力層の活性化関数: {out_f}')
-
 
     def forward(self, X, Y):
         '''互換性のため Y を入力としているが実際には使っていない'''
 
-        # 間接経路
-        emb = self.emb_layer(X)
-        emb = emb.reshape(emb.size(0), -1)
-        emb = self.emb_transform(emb)
+        # 直接経路
+        direct = torch.nn.functional.one_hot(X, num_classes=self.inp_vocab_size).to(self.device).float()
+        direct = direct.reshape(X.size(0), -1)
 
-        out = emb
+        # 出力層
+        out = self.out_layer(direct)
         out = out.reshape(out.size(0), self.out_len, self.out_vocab_size)
         if self.out_f is not None:
             out = self.out_f(out)
@@ -108,33 +54,29 @@ class indirect_TLA(torch.nn.Module):
         return out
 
 
-class combined_TLA(torch.nn.Module):
-    def __init__(self,
-                 inp_vocab_size:int=None, # len(psylex71_ds.input_tokenizer.tokens),
-                 out_vocab_size:int=None, # len(psylex71_ds.output_tokenizer.tokens),
-                 inp_len:int=None, # maxlen_inp,
-                 out_len:int=None, # psylex71_ds.maxlen_out,
-                 out_f:str='tanh',  # 出力層の活性化関数= ['tanh','sigmoid', 'relu', 'softmax', 'none']
-                 device:str=device):
+class indirect_TLA(torch.nn.Module):
+    def __init__(
+            self, inp_vocab_size:int=None, out_vocab_size:int=None, inp_len:int=None, out_len:int=None,
+            hid_size:int=None,  
+            hidden_out_f:str='tanh', # 出力層の活性化関数= ['tanh','sigmoid', 'relu', 'softmax', 'none']
+            out_f:str='tanh',        # 出力層の活性化関数= ['tanh','sigmoid', 'relu', 'softmax', 'none']
+            device:str=device):
 
         super().__init__()
+
         self.inp_vocab_size=inp_vocab_size
         self.inp_len=inp_len
         self.out_vocab_size=out_vocab_size
         self.out_len=out_len
         self.device=device
 
-        self.emb_layer = torch.nn.Embedding(
-            num_embeddings=inp_vocab_size,
-            embedding_dim=out_vocab_size,
-            padding_idx=0).to(device)
-        self.emb_transform = torch.nn.Linear(
-            in_features=inp_len * out_vocab_size,
-            out_features=out_vocab_size * out_len).to(device)
+        if hid_size is None:
+            self.hid_size = out_vocab_size * out_len
+        else:
+            self.hid_size = hid_size
 
-        self.out_layer = torch.nn.Linear(
-            in_features=inp_len * inp_vocab_size,
-            out_features=out_vocab_size * out_len).to(device)
+        self.emb_layer = torch.nn.Linear(in_features=inp_len * inp_vocab_size, out_features=self.hid_size).to(device)
+        self.out_layer = torch.nn.Linear(in_features=self.hid_size,            out_features=out_vocab_size * out_len).to(device)
 
         if out_f == 'tanh':
             self.out_f = torch.nn.Tanh()
@@ -144,31 +86,116 @@ class combined_TLA(torch.nn.Module):
             self.out_f = torch.nn.ReLU()
         elif out_f == 'softmax':
             self.out_f = torch.nn.Softmax(dim=2)
-        elif out_f == 'none':
+        elif out_f == 'ReLU':
+            self.out_f = torch.nn.ReLU()
+        elif out_f == None:
             self.out_f = None
         else:
             raise ValueError(f'不正な出力層の活性化関数: {out_f}')
 
 
+        if hidden_out_f == 'tanh':
+            self.hidden_out_f = torch.nn.Tanh()
+        elif hidden_out_f == 'sigmoid':
+            self.hidden_out_f = torch.nn.Sigmoid()
+        elif hidden_out_f == 'relu':
+            self.hidden_out_f = torch.nn.ReLU()
+        elif hidden_out_f == 'softmax':
+            self.hidden_out_f = torch.nn.Softmax(dim=2)
+        elif hidden_out_f == 'ReLU':
+            self.hidden_out_f = torch.nn.ReLU()
+        elif hidden_out_f == None:
+            self.hidden_out_f = None
+        else:
+            raise ValueError(f'不正な出力層の活性化関数: {hidden_out_f}')
+
+
     def forward(self, X, Y):
         '''互換性のため Y を入力としているが実際には使っていない'''
-
-        # 間接経路
-        emb = self.emb_layer(X)
-        emb = emb.reshape(emb.size(0), -1)
-        emb = self.emb_transform(emb).to(self.device)
-
         # 直接経路
-        Direct = torch.nn.functional.one_hot(X, num_classes=self.inp_vocab_size).to(self.device)
-        Direct = Direct.float()
-        Direct = Direct.reshape(X.size(0), -1)
+        direct = torch.nn.functional.one_hot(X, num_classes=self.inp_vocab_size).to(self.device).float()
+        direct = direct.reshape(X.size(0), -1)
 
-        out = self.out_layer(Direct)
-        out = out + emb
+        # 中間層
+        emb = self.emb_layer(direct)
+
+        if self.hidden_out_f is not None:
+            emb = self.hidden_out_f(emb)
+
+        # 出力層
+        out = self.out_layer(emb)
         out = out.reshape(out.size(0), self.out_len, self.out_vocab_size)
         if self.out_f is not None:
             out = self.out_f(out)
+        return out
 
+
+class combined_TLA(torch.nn.Module):
+    def __init__(
+            self,inp_vocab_size:int=None, out_vocab_size:int=None, inp_len:int=None, out_len:int=None,
+            hidden_out_f:str='tanh', # 出力層の活性化関数= ['tanh','sigmoid', 'relu', 'softmax', 'none']
+            out_f:str='tanh',      # 出力層の活性化関数= ['tanh','sigmoid', 'relu', 'softmax', 'none']
+            device:str=device):
+
+        super().__init__()
+        self.inp_vocab_size=inp_vocab_size
+        self.inp_len=inp_len
+        self.out_vocab_size=out_vocab_size
+        self.hidden_out_f=hidden_out_f
+        self.out_len=out_len
+        self.device=device
+
+        self.emb_layer = torch.nn.Linear(in_features=inp_len * inp_vocab_size, out_features=out_vocab_size * out_len).to(device)
+        self.out_layer = torch.nn.Linear(in_features=inp_len * inp_vocab_size, out_features=out_vocab_size * out_len).to(device)
+
+        if out_f == 'tanh':
+            self.out_f = torch.nn.Tanh()
+        elif out_f == 'sigmoid':
+            self.out_f = torch.nn.Sigmoid()
+        elif out_f == 'relu':
+            self.out_f = torch.nn.ReLU()
+        elif out_f == 'softmax':
+            self.out_f = torch.nn.Softmax(dim=2)
+        elif out_f == 'ReLU':
+            self.out_f = torch.nn.ReLU()
+        elif out_f == None:
+            self.out_f = None
+        else:
+            raise ValueError(f'不正な出力層の活性化関数: {out_f}')
+
+        if hidden_out_f == 'tanh':
+            self.hidden_out_f = torch.nn.Tanh()
+        elif hidden_out_f == 'sigmoid':
+            self.hidden_out_f = torch.nn.Sigmoid()
+        elif hidden_out_f == 'relu':
+            self.hidden_out_f = torch.nn.ReLU()
+        elif hidden_out_f == 'softmax':
+            self.hidden_out_f = torch.nn.Softmax(dim=2)
+        elif hidden_out_f == 'ReLU':
+            self.hidden_out_f = torch.nn.ReLU()
+        elif hidden_out_f == None:
+            self.hidden_out_f = None
+        else:
+            raise ValueError(f'不正な出力層の活性化関数: {hidden_out_f}')
+
+    def forward(self, X, Y):
+        '''互換性のため Y を入力としているが実際には使っていない'''
+
+        # 直接経路
+        direct = torch.nn.functional.one_hot(X, num_classes=self.inp_vocab_size).to(self.device).float()
+        direct = direct.reshape(X.size(0), -1)
+
+        # 間接経路
+        emb = self.emb_layer(direct)
+        if self.hidden_out_f is not None:
+            emb = self.hidden_out_f(emb)
+
+        direct = self.out_layer(direct)
+        if self.out_f is not None:
+            direct = self.out_f(direct)
+
+        out = direct + emb
+        out = out.reshape(out.size(0), self.out_len, self.out_vocab_size)
         return out
 
 

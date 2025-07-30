@@ -1,6 +1,17 @@
 import torch
 import torch.optim
 from torch.nn.utils.rnn import pad_sequence
+import numpy as np
+import random
+
+def init_seed(seed:int=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
 
 
 def fit_an_epoch(model:torch.nn.Module=None,
