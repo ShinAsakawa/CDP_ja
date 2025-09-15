@@ -6,7 +6,7 @@ import pandas as pd
 import jaconv
 
 # Mecab を使ってヨミを得るために MeCab を import
-from ccap.mecab_settings import wakati, yomi
+#from ccap.mecab_settings import wakati, yomi
 import jaconv
 import MeCab
 
